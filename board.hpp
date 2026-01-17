@@ -193,60 +193,21 @@ namespace reachability {
       return ret;
     }
     constexpr int clear_full_lines() {
-      board_t board = data;
-      constexpr int needed = std::numeric_limits<decltype(W)>::digits - std::countl_zero(W) - 1;
-      constexpr under_t first_line = (under_t(1) << W) - 1;
-      constexpr under_t not_first_line = ~first_line & mask;
-      constexpr unsigned int distance_to_highest = (lines_per_under - 1) * W;
-
-      static_for<needed>([&][[gnu::always_inline]](auto i) {
-        auto temp = board;
-        temp.template right_shift<1 << i>();
-        board &= temp;
-      });
-      auto temp = board;
-      temp.template right_shift<W - (1 << needed)>();
-      board &= temp;
+      auto is_full = all_bits();
       int lines = 0;
-      const auto remove_range = [](board_t data, unsigned int line_num) {
-        // for general use
-        under_t first_under = line_num / lines_per_under;
-        constexpr under_t distance_to_highest = (lines_per_under - 1) * W;
-        // only for line_num
-        under_t line_num_index_in_under = line_num % lines_per_under;
-        under_t line_num_under_mask = ((under_t(1) << (line_num_index_in_under*W))-under_t(1)) & mask;
-        under_t line_num_above_mask = (~((under_t(1) << ((line_num_index_in_under+1)*W)) - under_t(1))) & mask;
-        
-        // assert((line_num_index_in_under+remaining_per_under) < (sizeof(under_t)*CHAR_BIT));
-        // assert(((line_num_index_in_under+1)*W) < (sizeof(under_t)*CHAR_BIT));
-
-        data_t tmp_board = data.data;
-        
-        // first under_t needs to be handled specially by keeping everything under the line and masking everything above down by W
-        under_t below = tmp_board[first_under] & line_num_under_mask;
-        under_t above = (tmp_board[first_under] & line_num_above_mask) >> W;
-        
-        tmp_board[first_under] = below | above | (tmp_board[first_under + 1] & first_line << distance_to_highest);
-        tmp_board[first_under] &= mask;
-        //tmp_board[first_under] = (tmp_board[first_under] & line_num_under_mask) | ((tmp_board[first_under] & line_num_above_mask) >> W);
-        //tmp_board[first_under] |= tmp_board[first_under + 1] & first_line << ((lines_per_under - 1)*W);
-        //tmp_board[first_under] &= mask;
-        // everything else
-        for (unsigned int i = first_under+1; i < num_of_under - 1; ++i) {
-          tmp_board[i] = ((tmp_board[i] & not_first_line) >> W) | (tmp_board[i + 1] & first_line << distance_to_highest);
-          tmp_board[i] &= mask;
-        }
-        // last under_t
-        tmp_board[num_of_under - 1] >>= W;
-        tmp_board[num_of_under - 1] &= mask;
-        return data_t{tmp_board};
+      const auto remove_range = [](board_t board, unsigned start) {
+        auto below = board & full_lines_of(start);
+        auto above = board.move<coord{0, -1}>() & ~full_lines_of(start);
+        return below | above;
       };
+      auto copied = *this;
       static_for<H>([&][[gnu::always_inline]](auto y){
-        if (board.template get<0, y>()) {
-          data = remove_range(data, (y - lines));
+        if (is_full.template get<y>()) {
+          copied = remove_range(copied, y - lines);
           ++lines;
         }
       });
+      data = copied.data;
       return lines;
     }
     constexpr board_t has_single_bit() const {
@@ -359,6 +320,14 @@ namespace reachability {
           return mask;
         }
       }};
+    }
+    static constexpr board_t full_lines_of(int n) {
+      size_t full_unders = n / lines_per_under, remaining_filled_line = n % lines_per_under;
+      return to_board(data_t{[=](auto i) -> under_t {
+        if (i < full_unders) return mask;
+        else if (i > full_unders) return 0;
+        else return (under_t(1) << (W * remaining_filled_line)) - 1;
+      }});
     }
     template <int removed, bool from_right>
     static constexpr data_t my_split(data_t data) {
