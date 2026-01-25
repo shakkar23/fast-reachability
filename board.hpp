@@ -103,7 +103,9 @@ namespace reachability {
       result ^= rhs;
       return result;
     }
-    
+    constexpr under_t get_under(size_t i) const {
+      return data[i];
+    }
     template <std::integral auto N>
     constexpr void right_shift() {
       data >>= N;
@@ -366,4 +368,5 @@ namespace reachability {
       return res;
     }
   };
+
 }
